@@ -166,9 +166,22 @@ app.get('/', (req, res) => {
 });
 
 // Iniciar servidor
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`Servidor rodando na porta ${PORT}`);
     console.log(`Acesse: http://localhost:${PORT}`);
+    console.log(`Banco de dados SQLite localizado em: ${path.resolve('./estoque.db')}`);
+    
+    // Verificar integridade do banco ao iniciar
+    try {
+        const bancoOk = await db.verificarBanco();
+        if (bancoOk) {
+            console.log('Banco de dados pronto para uso');
+        } else {
+            console.warn('Banco de dados pode ter problemas de integridade');
+        }
+    } catch (err) {
+        console.error('Erro ao verificar banco de dados:', err.message);
+    }
 });
 
 // Fechar conexão ao encerrar aplicação
