@@ -3,6 +3,7 @@ console.log('app.js carregado');
 
 // Configuração da API - Usar hostname dinâmico para acesso de diferentes máquinas
 const API_URL = `${window.location.protocol}//${window.location.host}/api`;
+console.log('API URL configurada:', API_URL);
 
 // Variáveis globais
 let itens = [];
@@ -11,6 +12,9 @@ let movimentacoes = [];
 // Funções para chamadas da API
 async function apiRequest(endpoint, method = 'GET', data = null) {
     try {
+        const fullUrl = `${API_URL}${endpoint}`;
+        console.log(`Fazendo requisição ${method} para: ${fullUrl}`);
+        
         const options = {
             method: method,
             headers: {
@@ -22,15 +26,32 @@ async function apiRequest(endpoint, method = 'GET', data = null) {
             options.body = JSON.stringify(data);
         }
         
-        const response = await fetch(`${API_URL}${endpoint}`, options);
+        console.log('Opções da requisição:', options);
+        
+        const response = await fetch(fullUrl, options);
         
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            console.error(`Erro HTTP ${response.status} ao acessar ${fullUrl}`);
+            console.error('Detalhes da resposta:', {
+                status: response.status,
+                statusText: response.statusText,
+                headers: Object.fromEntries([...response.headers]),
+                url: response.url
+            });
+            throw new Error(`HTTP error! status: ${response.status}, url: ${fullUrl}`);
         }
         
         return await response.json();
     } catch (error) {
-        console.error('Erro na API:', error);
+        console.error('Erro detalhado na API:', error);
+        console.error('Informações da conexão:', {
+            'API_URL': API_URL,
+            'window.location.origin': window.location.origin,
+            'window.location.host': window.location.host,
+            'window.location.protocol': window.location.protocol,
+            'window.location.pathname': window.location.pathname,
+            'navigator.onLine': navigator.onLine
+        });
         throw error;
     }
 }
@@ -38,10 +59,45 @@ async function apiRequest(endpoint, method = 'GET', data = null) {
 // Carregar dados da API
 async function carregarDados() {
     try {
+        // Primeiro verificar se a API está disponível usando o endpoint de health check
+        try {
+            const health = await apiRequest('/health');
+            console.log('API health check:', health);
+            
+            // Se o banco de dados não estiver conectado, mostrar erro específico
+            if (health.database && health.database.status !== 'connected') {
+                throw new Error(`Problema de conexão com o banco de dados: ${health.database.error || 'status ' + health.database.status}`);
+            }
+        } catch (healthError) {
+            console.error('Falha no health check da API:', healthError);
+            // Continuar mesmo com falha no health check para tentar carregar os dados
+        }
+        
+        // Tentar carregar os dados da API
         itens = await apiRequest('/itens');
+        console.log(`Carregados ${itens.length} itens do estoque`);
+        
         movimentacoes = await apiRequest('/movimentacoes');
+        console.log(`Carregadas ${movimentacoes.length} movimentações`);
     } catch (error) {
-        alert('Erro ao carregar dados: ' + error.message);
+        console.error('Erro detalhado ao carregar dados:', error);
+        
+        // Mensagem de erro mais detalhada para o usuário
+        let mensagemErro = 'Erro ao carregar dados: ' + error.message;
+        
+        // Adicionar dicas para erros 404 (acesso de outras máquinas)
+        if (error.message && error.message.includes('404')) {
+            mensagemErro += '\n\nPossíveis causas:' +
+                '\n- Você está acessando de uma máquina diferente da que hospeda o banco' +
+                '\n- O servidor da API não está rodando ou não está acessível' +
+                '\n- O caminho da API está incorreto' +
+                '\n\nSugestões:' +
+                '\n- Verifique se o servidor está rodando' +
+                '\n- Verifique se você está usando a URL correta' +
+                '\n- Tente acessar diretamente na máquina que hospeda o banco';
+        }
+        
+        alert(mensagemErro);
     }
 }
 
@@ -749,13 +805,104 @@ window.importarBancoDados = async function(event) {
     }
 };
 
+// Mecanismo de reconexão
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 3;
+const RECONNECT_DELAY = 5000; // 5 segundos
+
+async function tentarReconectar() {
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+        console.error(`Falha após ${MAX_RECONNECT_ATTEMPTS} tentativas de reconexão`);
+        alert(`Não foi possível conectar ao servidor após ${MAX_RECONNECT_ATTEMPTS} tentativas. Verifique sua conexão e recarregue a página.`);
+        return false;
+    }
+    
+    reconnectAttempts++;
+    console.log(`Tentativa de reconexão ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}...`);
+    
+    try {
+        // Tentar carregar dados novamente após atraso
+        await new Promise(resolve => setTimeout(resolve, RECONNECT_DELAY));
+        await carregarDados();
+        console.log('Reconexão bem-sucedida!');
+        reconnectAttempts = 0; // Resetar contador em caso de sucesso
+        return true;
+    } catch (error) {
+        console.error('Falha na tentativa de reconexão:', error);
+        return false;
+    }
+}
+
+// Monitor de conectividade de rede
+window.addEventListener('online', async function() {
+    console.log('Conexão de rede restaurada, tentando reconectar...');
+    const statusBar = document.getElementById('connectionStatus');
+    if (statusBar) {
+        statusBar.className = 'connecting';
+        statusBar.textContent = 'Tentando reconectar...';
+    }
+    
+    if (await tentarReconectar()) {
+        // Atualizar interface após reconexão bem-sucedida
+        await atualizarControleEstoque();
+        await atualizarSelectRetirada();
+        
+        if (statusBar) {
+            statusBar.className = 'connected';
+            statusBar.textContent = 'Conectado';
+            
+            // Ocultar após alguns segundos
+            setTimeout(() => {
+                statusBar.style.display = 'none';
+            }, 3000);
+        }
+    }
+});
+
+window.addEventListener('offline', function() {
+    console.log('Conexão de rede perdida');
+    const statusBar = document.getElementById('connectionStatus');
+    if (statusBar) {
+        statusBar.style.display = 'block';
+        statusBar.className = 'disconnected';
+        statusBar.textContent = 'Desconectado - Verifique sua conexão';
+    }
+});
+
 // Inicializar o sistema
 document.addEventListener('DOMContentLoaded', async function() {
-    await carregarDados();
-    await atualizarControleEstoque();
-    await atualizarSelectRetirada();
-    await gerarRelatorioEstoque();
-    await gerarRelatorioMovimentacao();
+    // Adicionar barra de status de conexão
+    const statusBar = document.createElement('div');
+    statusBar.id = 'connectionStatus';
+    statusBar.className = 'connecting';
+    statusBar.textContent = 'Conectando...';
+    statusBar.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; padding: 5px; text-align: center; z-index: 9999; color: white; font-weight: bold; display: none;';
+    document.body.appendChild(statusBar);
+    
+    try {
+        statusBar.style.display = 'block';
+        await carregarDados();
+        await atualizarControleEstoque();
+        await atualizarSelectRetirada();
+        await gerarRelatorioEstoque();
+        await gerarRelatorioMovimentacao();
+        
+        // Atualizar status de conexão
+        statusBar.className = 'connected';
+        statusBar.textContent = 'Conectado';
+        
+        // Ocultar após alguns segundos
+        setTimeout(() => {
+            statusBar.style.display = 'none';
+        }, 2000);
+    } catch (error) {
+        console.error('Erro na inicialização:', error);
+        statusBar.className = 'disconnected';
+        statusBar.textContent = 'Falha na conexão - Tentando reconectar...';
+        
+        // Tentar reconectar automaticamente
+        tentarReconectar();
+    }
 });
 
 // Fechar modal ao clicar fora dele

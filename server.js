@@ -7,16 +7,55 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middlewares
-// Configuração CORS para permitir acesso de outros domínios
+// Configuração CORS aprimorada para permitir acesso de outros domínios incluindo Tembo.io
 app.use(cors({
     origin: '*', // Permite acesso de qualquer origem
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+    credentials: true,
+    maxAge: 86400 // Cache de preflight por 24 horas
 }));
+
+// Log de todas as requisições para facilitar o diagnóstico
+app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.url} - Origin: ${req.headers.origin || 'N/A'} - IP: ${req.ip}`);
+    next();
+});
 app.use(express.json());
 app.use(express.static('.')); // Servir arquivos estáticos da raiz do projeto
 
 // Rotas da API
+
+// Health check endpoint para verificar se a API está respondendo
+app.get('/api/health', (req, res) => {
+    const healthData = {
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        environment: {
+            nodeVersion: process.version,
+            platform: process.platform,
+            hostname: require('os').hostname()
+        },
+        database: {
+            type: 'SQLite',
+            path: path.resolve('./estoque.db'),
+            exists: fs.existsSync(path.resolve('./estoque.db'))
+        }
+    };
+    
+    // Teste simples de conexão com banco
+    db.verificarBanco()
+        .then(bancoOk => {
+            healthData.database.status = bancoOk ? 'connected' : 'error';
+            res.json(healthData);
+        })
+        .catch(err => {
+            healthData.database.status = 'error';
+            healthData.database.error = err.message;
+            res.status(500).json(healthData);
+        });
+});
 
 // Buscar todos os itens
 app.get('/api/itens', async (req, res) => {

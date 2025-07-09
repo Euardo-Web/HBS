@@ -21,14 +21,67 @@ if (!dbExists) {
 const connectionOptions = {
     // Ativar chaves estrangeiras
     foreignKeys: true,
-    // Tentar novamente se o banco estiver ocupado
-    busyTimeout: 5000
+    // Tentar novamente se o banco estiver ocupado (aumentado para 10 segundos)
+    busyTimeout: 10000
 };
 
-// Criar conexão com o banco de dados
+// Função para verificar permissões de arquivo
+function verificarPermissoesArquivo() {
+    try {
+        if (fs.existsSync(dbPath)) {
+            const stats = fs.statSync(dbPath);
+            console.log('Permissões do arquivo de banco:', {
+                owner: stats.uid,
+                group: stats.gid,
+                mode: stats.mode.toString(8),
+                size: stats.size,
+                modifiedTime: stats.mtime
+            });
+            
+            // Testar escrita
+            try {
+                fs.accessSync(dbPath, fs.constants.R_OK | fs.constants.W_OK);
+                console.log('Arquivo do banco tem permissões de leitura e escrita');
+                return true;
+            } catch (e) {
+                console.error('Erro de permissões no arquivo do banco:', e.message);
+                return false;
+            }
+        }
+        return true; // Retorna true se o arquivo não existir (será criado)
+    } catch (e) {
+        console.error('Erro ao verificar permissões do arquivo:', e);
+        return false;
+    }
+}
+
+// Verificar permissões do arquivo antes de conectar
+verificarPermissoesArquivo();
+
+// Criar conexão com o banco de dados com tratamento de erros melhorado
 const db = new sqlite3.Database(dbPath, connectionOptions, (err) => {
     if (err) {
-        console.error('Erro ao conectar ao banco de dados:', err.message);
+        console.error('ERRO CRÍTICO ao conectar ao banco de dados SQLite:', err);
+        console.error('Detalhes do erro:', {
+            code: err.code,
+            errno: err.errno,
+            syscall: err.syscall,
+            message: err.message
+        });
+        console.error('Caminho do banco de dados:', dbPath);
+        console.error('Diretório atual:', process.cwd());
+        
+        // Verificar se o diretório do banco existe e tem permissões
+        try {
+            const dirStats = fs.statSync(dbDir);
+            console.log('Permissões do diretório do banco:', {
+                owner: dirStats.uid,
+                group: dirStats.gid,
+                mode: dirStats.mode.toString(8)
+            });
+        } catch (e) {
+            console.error('Erro ao verificar diretório do banco:', e.message);
+        }
     } else {
         console.log('Conectado ao banco de dados SQLite:', dbPath);
         
@@ -36,6 +89,15 @@ const db = new sqlite3.Database(dbPath, connectionOptions, (err) => {
         if (!dbExists) {
             console.log('Inicializando novo banco de dados com estrutura padrão...');
         }
+        
+        // Executar PRAGMA para verificar a saúde do banco de dados
+        db.get("PRAGMA integrity_check", [], (err, result) => {
+            if (err) {
+                console.error("Erro ao verificar integridade do banco:", err.message);
+            } else {
+                console.log("Verificação de integridade:", result);
+            }
+        });
     }
 });
 
