@@ -1,8 +1,8 @@
 // Log para garantir que o app.js foi carregado corretamente
 console.log('app.js carregado');
 
-// Configuração da API
-const API_URL = 'http://localhost:3000/api';
+// Configuração da API - Usar hostname dinâmico para acesso de diferentes máquinas
+const API_URL = `${window.location.protocol}//${window.location.host}/api`;
 
 // Variáveis globais
 let itens = [];
@@ -605,6 +605,147 @@ window.unificarItensDuplicados = async function() {
         }
     } catch (e) {
         alert('Erro inesperado ao unificar itens: ' + e.message);
+    }
+};
+
+// Exportar banco de dados para sincronização
+window.exportarBancoDados = async function() {
+    try {
+        const resultadoDiv = document.getElementById('resultadoSincronizacao');
+        resultadoDiv.innerHTML = '<div class="alert alert-info">Exportando dados do banco, aguarde...</div>';
+        
+        const response = await fetch(API_URL + '/exportar-banco');
+        
+        if (!response.ok) {
+            throw new Error(`Erro ${response.status}: ${response.statusText}`);
+        }
+        
+        const dados = await response.json();
+        
+        // Converter para JSON string formatado
+        const dadosStr = JSON.stringify(dados, null, 2);
+        
+        // Criar blob e link para download
+        const blob = new Blob([dadosStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        const dataHora = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        a.download = `backup-estoque-${dataHora}.json`;
+        a.style.display = 'none';
+        
+        document.body.appendChild(a);
+        a.click();
+        
+        // Limpar após download
+        setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, 100);
+        
+        resultadoDiv.innerHTML = `
+            <div class="alert alert-success">
+                Exportação concluída com sucesso!<br>
+                Itens exportados: ${dados.itens.length}<br>
+                Movimentações exportadas: ${dados.movimentacoes.length}<br>
+                Data: ${new Date().toLocaleString()}
+            </div>
+        `;
+    } catch (error) {
+        document.getElementById('resultadoSincronizacao').innerHTML = `
+            <div class="alert alert-danger">
+                Erro ao exportar banco: ${error.message}
+            </div>
+        `;
+    }
+};
+
+// Importar banco de dados para sincronização
+window.importarBancoDados = async function(event) {
+    try {
+        const file = event.target.files[0];
+        if (!file) {
+            alert('Nenhum arquivo selecionado!');
+            return;
+        }
+        
+        const resultadoDiv = document.getElementById('resultadoSincronizacao');
+        resultadoDiv.innerHTML = '<div class="alert alert-info">Importando dados para o banco, aguarde...</div>';
+        
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            try {
+                const conteudo = e.target.result;
+                const dados = JSON.parse(conteudo);
+                
+                if (!dados.itens || !Array.isArray(dados.itens)) {
+                    throw new Error('Formato de arquivo inválido: não contém itens');
+                }
+                
+                // Confirmação adicional
+                if (!confirm(`Tem certeza que deseja importar ${dados.itens.length} itens? Todos os dados atuais serão substituídos.`)) {
+                    resultadoDiv.innerHTML = '<div class="alert alert-info">Importação cancelada pelo usuário.</div>';
+                    return;
+                }
+                
+                // Enviar para o servidor
+                const response = await fetch(API_URL + '/importar-banco', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(dados)
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `Erro ${response.status}`);
+                }
+                
+                const resultado = await response.json();
+                
+                resultadoDiv.innerHTML = `
+                    <div class="alert alert-success">
+                        Importação concluída com sucesso!<br>
+                        Itens importados: ${resultado.itensImportados}<br>
+                        Movimentações importadas: ${resultado.movimentacoesImportadas}<br>
+                        Data: ${new Date().toLocaleString()}
+                    </div>
+                `;
+                
+                // Recarregar dados
+                await carregarDados();
+                await atualizarControleEstoque();
+                await atualizarSelectRetirada();
+                await gerarRelatorioEstoque();
+                await gerarRelatorioMovimentacao();
+                
+            } catch (error) {
+                resultadoDiv.innerHTML = `
+                    <div class="alert alert-danger">
+                        Erro ao processar arquivo: ${error.message}
+                    </div>
+                `;
+            }
+        };
+        
+        reader.onerror = function() {
+            resultadoDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    Erro ao ler arquivo!
+                </div>
+            `;
+        };
+        
+        reader.readAsText(file);
+        
+    } catch (error) {
+        document.getElementById('resultadoSincronizacao').innerHTML = `
+            <div class="alert alert-danger">
+                Erro ao importar banco: ${error.message}
+            </div>
+        `;
     }
 };
 

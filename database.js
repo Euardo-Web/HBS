@@ -11,12 +11,31 @@ if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true });
 }
 
-// Criar conexão com o banco de dados com opções para GitHub
-const db = new sqlite3.Database(dbPath, (err) => {
+// Verificar se o arquivo do banco de dados existe, se não existir, criar um novo
+const dbExists = fs.existsSync(dbPath);
+if (!dbExists) {
+    console.log('Arquivo de banco de dados não encontrado. Criando um novo banco de dados.');
+}
+
+// Configurações para conexão mais robusta
+const connectionOptions = {
+    // Ativar chaves estrangeiras
+    foreignKeys: true,
+    // Tentar novamente se o banco estiver ocupado
+    busyTimeout: 5000
+};
+
+// Criar conexão com o banco de dados
+const db = new sqlite3.Database(dbPath, connectionOptions, (err) => {
     if (err) {
         console.error('Erro ao conectar ao banco de dados:', err.message);
     } else {
         console.log('Conectado ao banco de dados SQLite:', dbPath);
+        
+        // Se o banco acabou de ser criado, será inicializado com as tabelas
+        if (!dbExists) {
+            console.log('Inicializando novo banco de dados com estrutura padrão...');
+        }
     }
 });
 
@@ -226,6 +245,80 @@ function verificarBanco() {
     });
 }
 
+// Funções para exportar e importar dados (para sincronização entre diferentes máquinas)
+async function exportarDados() {
+    try {
+        // Exportar tabela de itens
+        const itens = await buscarItens();
+        
+        // Exportar tabela de movimentações (últimos 365 dias para não ficar muito grande)
+        const movimentacoes = await buscarMovimentacoes(365);
+        
+        return {
+            itens,
+            movimentacoes,
+            timestamp: new Date().toISOString(),
+            versao: '1.0'
+        };
+    } catch (error) {
+        console.error('Erro ao exportar dados:', error);
+        throw error;
+    }
+}
+
+async function importarDados(dados) {
+    if (!dados || !dados.itens) {
+        throw new Error('Dados inválidos para importação');
+    }
+    
+    try {
+        // Iniciar transação para garantir atomicidade da operação
+        await run('BEGIN TRANSACTION');
+        
+        // Limpar tabelas existentes
+        await run('DELETE FROM movimentacoes');
+        await run('DELETE FROM itens');
+        
+        // Inserir itens
+        for (const item of dados.itens) {
+            // Remover o ID para evitar conflitos com a sequência do autoincrement
+            const { id, data_cadastro, ...itemSemId } = item;
+            await inserirItem(itemSemId);
+        }
+        
+        // Inserir movimentações, se existirem
+        if (dados.movimentacoes && Array.isArray(dados.movimentacoes)) {
+            for (const mov of dados.movimentacoes) {
+                // Formatar dados para inserção
+                const movimentacao = {
+                    itemId: mov.item_id,
+                    itemNome: mov.item_nome,
+                    tipo: mov.tipo,
+                    quantidade: mov.quantidade,
+                    destino: mov.destino,
+                    descricao: mov.descricao
+                };
+                
+                await inserirMovimentacao(movimentacao);
+            }
+        }
+        
+        // Confirmar transação
+        await run('COMMIT');
+        
+        return {
+            sucesso: true,
+            itensImportados: dados.itens.length,
+            movimentacoesImportadas: dados.movimentacoes ? dados.movimentacoes.length : 0
+        };
+    } catch (error) {
+        // Reverter alterações em caso de erro
+        await run('ROLLBACK');
+        console.error('Erro ao importar dados:', error);
+        throw error;
+    }
+}
+
 module.exports = {
     inserirItem,
     buscarItens,
@@ -236,5 +329,7 @@ module.exports = {
     buscarMovimentacoes,
     fecharConexao,
     verificarBanco,
-    run // Exporta função utilitária
+    run, // Exporta função utilitária
+    exportarDados,
+    importarDados
 };

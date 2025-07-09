@@ -7,7 +7,12 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middlewares
-app.use(cors());
+// Configuração CORS para permitir acesso de outros domínios
+app.use(cors({
+    origin: '*', // Permite acesso de qualquer origem
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 app.use(express.static('.')); // Servir arquivos estáticos da raiz do projeto
 
@@ -162,13 +167,38 @@ app.get('/api/movimentacoes', async (req, res) => {
 
 // Servir página principal
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // Iniciar servidor
 app.listen(PORT, async () => {
     console.log(`Servidor rodando na porta ${PORT}`);
-    console.log(`Acesse: http://localhost:${PORT}`);
+    
+    // Exibir URLs de acesso local e de rede
+    console.log(`Acesso local: http://localhost:${PORT}`);
+    
+    // Tentar encontrar um endereço de IP da rede para facilitar acesso de outras máquinas
+    try {
+        const os = require('os');
+        const networkInterfaces = os.networkInterfaces();
+        let networkIP = '';
+        
+        // Procurar um endereço IPv4 não interno
+        Object.keys(networkInterfaces).forEach((interfaceName) => {
+            networkInterfaces[interfaceName].forEach((iface) => {
+                if (iface.family === 'IPv4' && !iface.internal) {
+                    networkIP = iface.address;
+                }
+            });
+        });
+        
+        if (networkIP) {
+            console.log(`Acesso pela rede: http://${networkIP}:${PORT}`);
+        }
+    } catch (e) {
+        console.log('Não foi possível determinar o endereço IP da rede');
+    }
+    
     console.log(`Banco de dados SQLite localizado em: ${path.resolve('./estoque.db')}`);
     
     // Verificar integridade do banco ao iniciar
@@ -240,6 +270,26 @@ app.post('/api/unificar-itens', async (req, res) => {
     console.error('Erro na unificação de itens:', err);
     res.status(500).json({ error: err && err.message ? err.message : String(err) });
   }
+});
+
+// Rota para exportar banco de dados (para sincronização)
+app.get('/api/exportar-banco', async (req, res) => {
+    try {
+        const dados = await db.exportarDados();
+        res.json(dados);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Rota para importar banco de dados (para sincronização)
+app.post('/api/importar-banco', async (req, res) => {
+    try {
+        const resultado = await db.importarDados(req.body);
+        res.json(resultado);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
 // Middleware global para garantir resposta JSON em qualquer erro
