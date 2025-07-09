@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="main.css">
+    <title>Sistema de Estoque HBS</title>
+    
+</head>
+<body>
+    <div class="container">
+        <div class="header-content">
+            <img src="./andritzlogo.png" alt="Andritz Logo" class="logo">
+        </div>
+        <div class="header">
+            <h1>Sistema de Estoque HBS</h1>
+            <div class="nav-buttons">
+                <button class="nav-btn active" onclick="showSection('cadastro')">Cadastro de Itens</button> 
+                <button class="nav-btn" onclick="showSection('estoque')">Controle de Estoque</button>
+                <button class="nav-btn" onclick="showSection('retirada')">Retirada de Itens</button>
+                <button class="nav-btn" onclick="showSection('relatorio1')">Relatório Estoque</button>
+                <button class="nav-btn" onclick="showSection('relatorio2')">Relatório Movimentação</button>
+            </div>
+        </div>
+
+        <!-- Seção Cadastro de Itens -->
+        <div id="cadastro" class="content section active">
+            <h2>Cadastro de Itens</h2>
+            <form id="itemForm">
+                <input type="file" id="importarEPI" accept=".csv,.xlsx,.xls" style="display:none" onchange="importarPlanilhaEPI(event)">
+                <label for="importarEPI" class="btn">Importar Relatório de EPIs</label>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="nome">Nome do Item:</label>
+                        <input type="text" id="nome" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="serie">Código:</label>
+                        <input type="text" id="serie">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="descricao">Descrição:</label>
+                    <textarea id="descricao" rows="3"></textarea>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="origem">Origem:</label>
+                        <input type="text" id="origem">
+                    </div>
+                    <div class="form-group">
+                        <label for="destino">Destino:</label>
+                        <input type="text" id="destino">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="valor">Valor (R$):</label>
+                        <input type="number" id="valor" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label for="nf">Nota Fiscal:</label>
+                        <input type="text" id="nf">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="quantidade">Quantidade Atual:</label>
+                        <input type="number" id="quantidade" required min="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="minimo">Quantidade Mínima:</label>
+                        <input type="number" id="minimo" required min="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="ideal">Quantidade Ideal:</label>
+                        <input type="number" id="ideal" required min="0">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="infos">Informações Adicionais:</label>
+                    <textarea id="infos" rows="3"></textarea>
+                </div>
+                
+                <button type="submit" class="btn">Cadastrar Item</button>
+                <button type="button" class="btn btn-warning" onclick="limparFormulario()">Limpar</button>
+            </form>
+        </div>
+
+        <!-- Seção Controle de Estoque -->
+        <div id="estoque" class="content section">
+            <h2>Controle de Estoque</h2>
+            <div id="alertas"></div>
+
+            <!-- Filtros e Pesquisa -->
+            <div class="filter-section">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="pesquisaEstoque">Pesquisar Item:</label>
+                        <input type="text" id="pesquisaEstoque" placeholder="Digite o nome do item..." onkeyup="filtrarEstoque()">
+                    </div>
+                    <div class="form-group">
+                        <label for="filtroStatus">Filtrar por Status:</label>
+                        <select id="filtroStatus" onchange="filtrarEstoque()">
+                            <option value="">Todos os Status</option>
+                            <option value="abaixo-minimo">Abaixo do Mínimo</option>
+                            <option value="abaixo-ideal">Abaixo do Ideal</option>
+                            <option value="ideal">Ideal</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="ordenacao">Ordenar por:</label>
+                        <select id="ordenacao" onchange="filtrarEstoque()">
+                            <option value="nome">Nome</option>
+                            <option value="quantidade">Quantidade</option>
+                            <option value="status">Status</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>&nbsp;</label>
+                        <button class="btn btn-warning" onclick="limparFiltros()">Limpar Filtros</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number" id="totalItens">0</div>
+                    <div class="stat-label">Total de Itens</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="itensAbaixoMinimo">0</div>
+                    <div class="stat-label">Abaixo do Mínimo</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="itensAbaixoIdeal">0</div>
+                    <div class="stat-label">Abaixo do Ideal</div>
+                </div>
+            </div>
+            
+            <div class="table-container">
+                <table id="tabelaEstoque">
+                    <thead>
+                        <tr>
+                            <th>Nome</th>
+                            <th>WBS</th>
+                            <th>Atual</th>
+                            <th>Mínimo</th>
+                            <th>Ideal</th>
+                            <th>Status</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Seção Retirada de Itens -->
+        <div id="retirada" class="content section">
+            <h2>Retirada de Itens</h2>
+            <form id="retiradaForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="itemRetirada">Selecionar Item:</label>
+                        <select id="itemRetirada" required>
+                            <option value="">Selecione um item...</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="quantidadeRetirada">Quantidade:</label>
+                        <input type="number" id="quantidadeRetirada" required min="1">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="destinoRetirada">Para onde foi:</label>
+                    <input type="text" id="destinoRetirada" required placeholder="Ex: Setor X, Cliente Y, etc.">
+                </div>
+                
+                <div class="form-group">
+                    <label for="observacaoRetirada">Observações:</label>
+                    <textarea id="observacaoRetirada" rows="3"></textarea>
+                </div>
+                
+                <button type="submit" class="btn btn-danger">Realizar Retirada</button>
+            </form>
+        </div>
+
+        <!-- Relatório Estoque -->
+        <div id="relatorio1" class="content section">
+            <h2>Relatório de Estoque</h2>
+            <div class="form-row">
+                <button class="btn" onclick="gerarRelatorioEstoque()">Atualizar Relatório</button>
+                <button class="btn btn-warning" onclick="exportarRelatorio('estoque')">Exportar</button>
+                <button class="btn btn-danger" onclick="unificarItensDuplicados()">Unificar Itens Duplicados</button>
+            </div>
+            <div id="relatorioEstoque"></div>
+        </div>
+
+        <!-- Relatório Movimentação -->
+        <div id="relatorio2" class="content section">
+            <h2>Relatório de Movimentação</h2>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="filtroData">Filtrar por período:</label>
+                    <select id="filtroData">
+                        <option value="7">Últimos 7 dias</option>
+                        <option value="30">Últimos 30 dias</option>
+                        <option value="90">Últimos 90 dias</option>
+                    </select>
+                </div>
+                <button class="btn" onclick="gerarRelatorioMovimentacao()">Atualizar Relatório</button>
+                <button class="btn btn-warning" onclick="exportarRelatorio('movimentacao')">Exportar</button>
+            </div>
+            <div id="relatorioMovimentacao"></div>
+        </div>
+    </div>
+
+    <!-- Modal para adicionar estoque -->
+    <div id="modalEstoque" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="fecharModal()">&times;</span>
+            <h3>Adicionar Estoque</h3>
+            <form id="adicionarEstoqueForm">
+                <input type="hidden" id="itemIdModal">
+                <div class="form-group">
+                    <label for="quantidadeAdicionar">Quantidade a adicionar:</label>
+                    <input type="number" id="quantidadeAdicionar" required min="1">
+                </div>
+                <div class="form-group">
+                    <label for="observacaoAdicionar">Observações:</label>
+                    <textarea id="observacaoAdicionar" rows="3"></textarea>
+                </div>
+                <button type="submit" class="btn">Adicionar</button>
+                <button type="button" class="btn btn-warning" onclick="fecharModal()">Cancelar</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal para editar item -->
+    <div id="modalEditarItem" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="fecharModalEditarItem()">&times;</span>
+            <h3>Editar Item do Estoque</h3>
+            <form id="editarItemForm">
+                <input type="hidden" id="editarItemId">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="editarNome">Nome do Item:</label>
+                        <input type="text" id="editarNome" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editarSerie">WBS:</label>
+                        <input type="text" id="editarSerie">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="editarDescricao">Descrição:</label>
+                    <textarea id="editarDescricao" rows="2"></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="editarOrigem">Origem:</label>
+                        <input type="text" id="editarOrigem">
+                    </div>
+                    <div class="form-group">
+                        <label for="editarDestino">Destino:</label>
+                        <input type="text" id="editarDestino">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="editarValor">Valor (R$):</label>
+                        <input type="number" id="editarValor" step="0.01">
+                    </div>
+                    <div class="form-group">
+                        <label for="editarNF">Nota Fiscal:</label>
+                        <input type="text" id="editarNF">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="editarQuantidade">Quantidade Atual:</label>
+                        <input type="number" id="editarQuantidade" required min="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="editarMinimo">Quantidade Mínima:</label>
+                        <input type="number" id="editarMinimo" required min="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="editarIdeal">Quantidade Ideal:</label>
+                        <input type="number" id="editarIdeal" required min="0">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="editarInfos">Informações Adicionais:</label>
+                    <textarea id="editarInfos" rows="2"></textarea>
+                </div>
+                <button type="submit" class="btn">Salvar Alterações</button>
+                <button type="button" class="btn btn-warning" onclick="fecharModalEditarItem()">Cancelar</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Script principal do sistema -->
+    <script src="app.js"></script>
+</body>
+</html>
