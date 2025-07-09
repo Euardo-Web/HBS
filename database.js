@@ -1,9 +1,24 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const fs = require('fs');
 
 // Criar conexão com o banco de dados
 const dbPath = path.join(__dirname, 'estoque.db');
-const db = new sqlite3.Database(dbPath);
+
+// Verificar se o diretório do banco de dados existe
+const dbDir = path.dirname(dbPath);
+if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+}
+
+// Criar conexão com o banco de dados com opções para GitHub
+const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+        console.error('Erro ao conectar ao banco de dados:', err.message);
+    } else {
+        console.log('Conectado ao banco de dados SQLite:', dbPath);
+    }
+});
 
 // Criar tabelas
 db.serialize(() => {
@@ -191,6 +206,26 @@ function fecharConexao() {
     });
 }
 
+// Verificar estado do banco de dados
+function verificarBanco() {
+    return new Promise((resolve, reject) => {
+        db.get("PRAGMA integrity_check", [], (err, result) => {
+            if (err) {
+                console.error("Erro ao verificar integridade do banco:", err.message);
+                reject(err);
+            } else {
+                if (result.integrity_check === 'ok') {
+                    console.log("Banco de dados íntegro e pronto para uso");
+                    resolve(true);
+                } else {
+                    console.warn("Problemas de integridade no banco:", result.integrity_check);
+                    resolve(false);
+                }
+            }
+        });
+    });
+}
+
 module.exports = {
     inserirItem,
     buscarItens,
@@ -200,5 +235,6 @@ module.exports = {
     inserirMovimentacao,
     buscarMovimentacoes,
     fecharConexao,
+    verificarBanco,
     run // Exporta função utilitária
 };
