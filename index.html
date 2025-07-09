@@ -21,6 +21,7 @@
                 <button class="nav-btn" onclick="showSection('retirada')">Retirada de Itens</button>
                 <button class="nav-btn" onclick="showSection('relatorio1')">Relatório Estoque</button>
                 <button class="nav-btn" onclick="showSection('relatorio2')">Relatório Movimentação</button>
+                <button class="nav-btn" onclick="showSection('sincronizacao')">Sincronização</button>
             </div>
         </div>
 
@@ -220,6 +221,32 @@
                 <button class="btn btn-warning" onclick="exportarRelatorio('movimentacao')">Exportar</button>
             </div>
             <div id="relatorioMovimentacao"></div>
+        </div>
+        
+        <!-- Seção de Sincronização de Banco de Dados -->
+        <div id="sincronizacao" class="content section">
+            <h2>Sincronização de Banco de Dados</h2>
+            <div class="alert alert-info">
+                Use esta seção para alinhar os dados entre diferentes computadores. Você pode exportar os dados deste computador e importar em outro, ou vice-versa.
+            </div>
+            
+            <div class="sync-container">
+                <div class="sync-card">
+                    <h3>Exportar Dados</h3>
+                    <p>Baixe um arquivo com todos os dados do banco para importar em outro computador.</p>
+                    <button class="btn" onclick="exportarBancoDados()">Exportar Banco de Dados</button>
+                </div>
+                
+                <div class="sync-card">
+                    <h3>Importar Dados</h3>
+                    <p>Selecione um arquivo de banco de dados exportado de outro computador para importar aqui.</p>
+                    <p><strong>Atenção:</strong> Esta ação substituirá todos os dados atuais.</p>
+                    <input type="file" id="importarBanco" accept=".json" style="display:none" onchange="importarBancoDados(event)">
+                    <label for="importarBanco" class="btn btn-warning">Selecionar Arquivo para Importar</label>
+                </div>
+            </div>
+            
+            <div id="resultadoSincronizacao" class="mt-4"></div>
         </div>
     </div>
 
